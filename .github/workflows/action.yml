@@ -27,5 +27,8 @@ jobs:
       - name: Install backend dependencies
         run: npm ci --legacy-peer-deps
 
+      - name: Install nodemailer globally
+        run: npm install -g nodemailer
+
       - name: Run unit tests
         run: npm test -- --ci

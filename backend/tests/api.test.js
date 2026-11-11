@@ -11,6 +11,7 @@ test("Vite receives credentialed CORS headers", async () => {
   const result = await request(app)
     .get("/health/live")
     .set("Origin", "http://localhost:5173");
+
   expect(result.status).toBe(200);
   expect(result.headers["access-control-allow-origin"]).toBe(
     "http://localhost:5173",
@@ -33,8 +34,10 @@ test("untrusted browser origins are rejected", async () => {
   const result = await request(app)
     .post("/api/auth/logout")
     .set("Origin", "https://untrusted.example");
+
   expect(result.status).toBe(403);
 });
+
 test.each([
   "/api/users",
   "/api/orders",
@@ -57,6 +60,7 @@ test.each([
 ])("private endpoint %s rejects anonymous access", async (path) => {
   expect((await request(app).get(path)).status).toBe(401);
 });
+
 test.each([
   "/api/products/add-new",
   "/api/brands/add",
@@ -75,11 +79,27 @@ test.each([
 ])("management endpoint %s rejects anonymous writes", async (path) => {
   expect((await request(app).post(path).send({})).status).toBe(401);
 });
+
 test("readiness remains unavailable without a database connection", async () => {
   expect((await request(app).get("/health/ready")).status).toBe(503);
 });
 
-test.each(["/api/wallet/admin", "/api/wallet/admin/users/507f1f77bcf86cd799439011", "/api/deliveries/pending"])("customer session cannot access %s", async path => {
-  const token = require("jsonwebtoken").sign({ id: "507f1f77bcf86cd799439011", sid: "customer-session" }, process.env.JWT_SECRET);
-  expect((await request(app).get(path).set("Cookie", `accessToken=${token}`)).status).toBe(401);
+test.each([
+  "/api/wallet/admin",
+  "/api/wallet/admin/users/507f1f77bcf86cd799439011",
+  "/api/deliveries/pending",
+])("customer session cannot access %s", async (path) => {
+  const token = require("jsonwebtoken").sign(
+    {
+      id: "507f1f77bcf86cd799439011",
+      sid: "customer-session",
+    },
+    process.env.JWT_SECRET,
+  );
+
+  const result = await request(app)
+    .get(path)
+    .set("Cookie", `accessToken=${token}`);
+
+  expect(result.status).toBe(401);
 });

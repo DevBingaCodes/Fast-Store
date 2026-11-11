@@ -67,32 +67,28 @@ const s3Storage = (folder) =>
     },
   });
 
-const productPhotoUploader = multer({
-  storage: s3Storage("products"),
-  limits: {
-    files: 4,
-    fileSize: 5 * 1024 * 1024,
-  },
-  fileFilter: imageFileFilter,
-});
+const createUploader = (folder, fileLimit) =>
+  multer({
+    storage: s3Storage(folder),
+    limits: {
+      files: fileLimit,
+      fileSize: 5 * 1024 * 1024,
+    },
+    fileFilter: imageFileFilter,
+  });
 
-const brandLogoUploader = multer({
-  storage: s3Storage("brand-logos"),
-  limits: {
-    files: 1,
-    fileSize: 5 * 1024 * 1024,
-  },
-  fileFilter: imageFileFilter,
-});
+let productPhotoUploader;
+let brandLogoUploader;
+let refundEvidenceUploader;
 
-const refundEvidenceUploader = multer({
-  storage: s3Storage("refund-evidence"),
-  limits: {
-    files: 2,
-    fileSize: 5 * 1024 * 1024,
-  },
-  fileFilter: imageFileFilter,
-});
+const getProductPhotoUploader = () =>
+  (productPhotoUploader ??= createUploader("products", 4));
+
+const getBrandLogoUploader = () =>
+  (brandLogoUploader ??= createUploader("brand-logos", 1));
+
+const getRefundEvidenceUploader = () =>
+  (refundEvidenceUploader ??= createUploader("refund-evidence", 2));
 
 const ensureS3Configured = (next) => {
   const missingSetting = requiredS3Settings.find(
@@ -129,7 +125,7 @@ const uploadProductImages = (req, res, next) => {
     return;
   }
 
-  productPhotoUploader.array("images", 4)(
+  getProductPhotoUploader().array("images", 4)(
     req,
     res,
     (error) => handleUploadError(error, next)
@@ -141,7 +137,7 @@ const uploadBrandLogo = (req, res, next) => {
     return;
   }
 
-  brandLogoUploader.single("logo")(
+  getBrandLogoUploader().single("logo")(
     req,
     res,
     (error) => handleUploadError(error, next)
@@ -158,7 +154,7 @@ const uploadRefundEvidence = (req, res, next) => {
     return;
   }
 
-  refundEvidenceUploader.array("evidence", 2)(
+  getRefundEvidenceUploader().array("evidence", 2)(
     req,
     res,
     (error) => handleUploadError(error, next)
