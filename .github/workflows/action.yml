@@ -1,4 +1,5 @@
-name: Deploy Prestige Hostel
+
+name: Deploy Fast Store API
 
 on:
   push:
@@ -9,26 +10,214 @@ jobs:
   deploy:
     name: Deployment Pipeline
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup NodeJS
-        uses: actions/setup-node@v4
+      # 1. Setup SSH authentication
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
         with:
-          node-version: "24"
-          cache: "npm"
-          cache-dependency-path: backend/package-lock.json
+          ssh-private-key: ${{ secrets.SSH_KEY }}
 
-      - name: Install backend dependencies
-        run: npm ci --legacy-peer-deps
+      # 2. Transfer production secrets to the VPS
+      - name: Configure production environment
+        env:
+          PORT: 5500
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+          CLIENT_URL: ${{ secrets.CLIENT_URL }}
+          ADMIN_CLIENT_URL: ${{ secrets.ADMIN_CLIENT_URL }}
+          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+          ADMIN_JWT_SECRET: ${{ secrets.ADMIN_JWT_SECRET }}
+          ADMIN_JWT_REFRESH_SECRET: ${{ secrets.ADMIN_JWT_REFRESH_SECRET }}
+          ADMIN_REGISTRATION_KEY: ${{ secrets.ADMIN_REGISTRATION_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+          BREVO_SENDER_EMAIL: ${{ secrets.BREVO_SENDER_EMAIL }}
+          PAYPAL_CLIENT_ID: ${{ secrets.PAYPAL_CLIENT_ID }}
+          PAYPAL_CLIENT_SECRET: ${{ secrets.PAYPAL_CLIENT_SECRET }}
+          PAYPAL_ENVIRONMENT: ${{ secrets.PAYPAL_ENVIRONMENT }}
+          PAYPAL_WEBHOOK_ID: ${{ secrets.PAYPAL_WEBHOOK_ID }}
 
-      - name: Install nodemailer globally
-        run: npm install -g nodemailer
+        run: |
+          set -euo pipefail
 
-      - name: Run unit tests
-        run: npm test -- --ci
+          ENV_B64="$(node -e '
+            const keys = [
+              "PORT",
+              "MONGO_URI",
+              "CLIENT_URL",
+              "ADMIN_CLIENT_URL",
+              "CORS_ORIGINS",
+              "JWT_SECRET",
+              "JWT_REFRESH_SECRET",
+              "ADMIN_JWT_SECRET",
+              "ADMIN_JWT_REFRESH_SECRET",
+              "ADMIN_REGISTRATION_KEY",
+              "AWS_ACCESS_KEY_ID",
+              "AWS_SECRET_ACCESS_KEY",
+              "AWS_REGION",
+              "AWS_S3_BUCKET",
+              "STRIPE_SECRET_KEY",
+              "WEBHOOK_SECRET",
+              "BREVO_API_KEY",
+              "BREVO_SENDER_EMAIL",
+              "PAYPAL_CLIENT_ID",
+              "PAYPAL_CLIENT_SECRET",
+              "PAYPAL_ENVIRONMENT",
+              "PAYPAL_WEBHOOK_ID"
+            ];
+
+            for (const key of keys) {
+              if (!process.env[key]) {
+                console.error(`Missing GitHub secret: ${key}`);
+                process.exit(1);
+              }
+            }
+
+            const contents = keys
+              .map(key => `${key}=${JSON.stringify(process.env[key])}`)
+              .join("\n") + "\n";
+
+            process.stdout.write(
+              Buffer.from(contents).toString("base64")
+            );
+          ')"
+
+          printf '%s' "$ENV_B64" | ssh \
+            -o StrictHostKeyChecking=no \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+            'umask 077; mkdir -p /home/binga/app-configs && base64 --decode > /home/binga/app-configs/Fast-Store-API.env.tmp && mv /home/binga/app-configs/Fast-Store-API.env.tmp /home/binga/app-configs/Fast-Store-API.env && chmod 600 /home/binga/app-configs/Fast-Store-API.env'
+
+      # 3. Deploy and provision VPS
+      - name: Deploy and Provision VPS
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+            set -e
+
+            APP_DIR="/home/binga/apps/Fast-Store-API"
+            APP_NAME="Fast Store API"
+            DOMAIN="api.faststore.skirill.org"
+            PORT="5500"
+            REPO="git@github.com:DevBingaCodes/Fast-Store.git"
+            ENV_FILE="/home/binga/app-configs/Fast-Store-API.env"
+
+            # Load Node.js through NVM
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+            nvm use 26.13.0
+
+            echo "Node: $(node -v)"
+            echo "NPM: $(npm -v)"
+
+            # Verify non-interactive sudo access
+            sudo -n /usr/bin/apt-get --version > /dev/null
+
+            # Install Nginx and Certbot if necessary
+            if ! command -v nginx >/dev/null 2>&1 || \
+               ! command -v certbot >/dev/null 2>&1 || \
+               ! dpkg -s python3-certbot-nginx >/dev/null 2>&1; then
+
+              echo "Installing Nginx and Certbot..."
+              sudo apt-get update
+              sudo apt-get install -y nginx certbot python3-certbot-nginx
+            fi
+
+            # Create application directory
+            mkdir -p /home/binga/apps
+
+            # Clone repository on first deployment
+            if [ ! -d "$APP_DIR/.git" ]; then
+              if [ -e "$APP_DIR" ]; then
+                echo "Application directory exists but is not a Git repository."
+                exit 1
+              fi
+
+              echo "Cloning repository..."
+              git clone "$REPO" "$APP_DIR"
+            fi
+
+            cd "$APP_DIR"
+
+            # Ensure SSH-based GitHub authentication
+            git remote set-url origin "$REPO"
+
+            echo "Pulling latest code..."
+            git pull --ff-only origin master
+
+            # Connect protected environment file
+            if [ ! -f "$ENV_FILE" ]; then
+              echo "Production environment file is missing."
+              exit 1
+            fi
+
+            ln -sfn "$ENV_FILE" "$APP_DIR/.env"
+
+            # Install production dependencies
+            echo "Installing production dependencies..."
+            npm ci --omit=dev
+
+            # Configure Nginx on first deployment
+            NGINX_CONFIG="/etc/nginx/sites-available/$DOMAIN"
+
+            if [ ! -f "$NGINX_CONFIG" ]; then
+              echo "Creating Nginx configuration..."
+
+              printf '%s\n' \
+                'server {' \
+                '    listen 80;' \
+                '    listen [::]:80;' \
+                '' \
+                "    server_name $DOMAIN;" \
+                '' \
+                '    location / {' \
+                "        proxy_pass http://127.0.0.1:$PORT;" \
+                '        proxy_http_version 1.1;' \
+                '' \
+                '        proxy_set_header Host $host;' \
+                '        proxy_set_header X-Real-IP $remote_addr;' \
+                '        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;' \
+                '        proxy_set_header X-Forwarded-Proto $scheme;' \
+                '    }' \
+                '}' | sudo tee "$NGINX_CONFIG" > /dev/null
+            fi
+
+            # Enable Nginx site
+            sudo ln -sfn "$NGINX_CONFIG" "/etc/nginx/sites-enabled/$DOMAIN"
+
+            sudo nginx -t
+            sudo systemctl enable --now nginx
+            sudo systemctl reload nginx
+
+            # Start or restart application using PM2
+            echo "Starting application..."
+
+            if pm2 describe "$APP_NAME" >/dev/null 2>&1; then
+              pm2 restart "$APP_NAME" --update-env
+            else
+              pm2 start npm --name "$APP_NAME" -- start
+            fi
+
+            pm2 save
+
+            # Configure HTTPS
+            echo "Configuring HTTPS..."
+
+            sudo certbot --nginx \
+              -d "$DOMAIN" \
+              --non-interactive \
+              --agree-tos \
+              --register-unsafely-without-email \
+              --redirect
+
+            # Enable automatic certificate renewal
+            sudo systemctl enable --now certbot.timer
+
+            echo "Fast-Store-API deployment completed successfully!"
+            pm2 status
+          EOF

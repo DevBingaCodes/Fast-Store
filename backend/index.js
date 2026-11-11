@@ -217,6 +217,7 @@ async function start() {
     // Start HTTP server.
     const server = app.listen(
         Number(process.env.PORT) || 5500,
+        "0.0.0.0",
         () => {
             console.log("Backend is ready.");
         }
