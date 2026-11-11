@@ -4,7 +4,7 @@
 
 Copy `.env.example` to `.env` only for a new installation. Existing `.env` files should be updated rather than overwritten. Set distinct random values for `JWT_SECRET`, `JWT_REFRESH_SECRET`, `ADMIN_JWT_SECRET`, and `ADMIN_JWT_REFRESH_SECRET` (at least 32 characters each). Set a private `ADMIN_REGISTRATION_KEY` of at least 32 characters, plus `MONGO_URI` and `CLIENT_URL`. `CORS_ORIGINS` is an optional comma-separated allowlist, and `ADMIN_CLIENT_URL` can declare the administrator frontend explicitly. Vite at localhost:5173 is supported.
 
-`npm start` loads backend/.env exactly once, validates required variables, connects to MongoDB, then listens on PORT (default 5500). `npm run dev` uses nodemon. Optional Stripe, mail and SMS credentials are checked when their features are used. `/health/live` checks the process and `/health/ready` checks MongoDB connectivity.
+`npm start` loads backend/.env exactly once, validates required variables, connects to MongoDB, then listens on PORT (default 5500). `npm run dev` uses nodemon. Optional Stripe, mail and SMS credentials are checked when their features are used. `/health/live` checks the process and `/health/ready` checks MongoDB connectivity. Prometheus can scrape `/metrics` for Node.js process metrics and HTTP request totals and durations; restrict access to this endpoint to your monitoring network.
 
 ## Session contract
 

@@ -12,12 +12,33 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
+const {
+    collectDefaultMetrics,
+    Counter,
+    Histogram,
+    register,
+} = require("@prometheus-io/client");
 
 const { fail, errorHandler } = require("./utils/http");
 const rateLimit = require("./middleware/rateLimit");
 
 // Initialize Express
 const app = express();
+
+collectDefaultMetrics();
+
+const httpRequests = new Counter({
+    name: "http_requests_total",
+    help: "Total number of HTTP requests handled by the API.",
+    labelNames: ["method", "status_code"],
+});
+
+const httpRequestDuration = new Histogram({
+    name: "http_request_duration_seconds",
+    help: "HTTP request duration in seconds.",
+    labelNames: ["method"],
+    buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
+});
 
 // CORS
 // Preserve the Vite origin and allow explicitly configured deployment origins.
@@ -46,6 +67,28 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+
+// Track request volume and latency without using URL paths as labels,
+// which could create unbounded metric cardinality.
+app.use((req, res, next) => {
+    if (req.path === "/metrics") {
+        return next();
+    }
+
+    const endTimer = httpRequestDuration.startTimer({
+        method: req.method,
+    });
+
+    res.once("finish", () => {
+        httpRequests.inc({
+            method: req.method,
+            status_code: String(res.statusCode),
+        });
+        endTimer();
+    });
+
+    next();
+});
 
 
 // Cookie-authenticated writes reject untrusted browser origins before execution.
@@ -143,6 +186,16 @@ app.get("/health/ready", (req, res) => {
         .json({
             ready: isReady,
         });
+});
+
+// Prometheus scrape endpoint.
+app.get("/metrics", async (req, res, next) => {
+    try {
+        res.set("Content-Type", register.contentType);
+        res.end(await register.metrics());
+    } catch (error) {
+        next(error);
+    }
 });
 
 // 404 Handler
