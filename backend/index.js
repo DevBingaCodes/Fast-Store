@@ -44,7 +44,7 @@ const httpRequestDuration = new Histogram({
 // Preserve the Vite origin and allow explicitly configured deployment origins.
 const allowedOrigins = new Set(
     [
-        "http://localhost:5173",
+        "http://localhost:5173", "http://127.0.0.1:5173",
         ...(process.env.CORS_ORIGINS || "").split(","),
         process.env.CLIENT_URL,
         process.env.ADMIN_CLIENT_URL,

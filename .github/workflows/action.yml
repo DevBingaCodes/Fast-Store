@@ -43,6 +43,9 @@ jobs:
           PAYPAL_CLIENT_SECRET: ${{ secrets.PAYPAL_CLIENT_SECRET }}
           PAYPAL_ENVIRONMENT: ${{ secrets.PAYPAL_ENVIRONMENT }}
           PAYPAL_WEBHOOK_ID: ${{ secrets.PAYPAL_WEBHOOK_ID }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID}}
+          GOOGLE_CLIENT_SECRET:  ${{ secrets.GOOGLE_CLIENT_SECRET}}
+          GOOGLE_CALLBACK_URL: ${{secrets.GOOGLE_CALLBACK_URL}}
 
         run: |
           set -euo pipefail
@@ -103,7 +106,7 @@ jobs:
             APP_DIR="/home/binga/apps/Fast-Store-API"
             BACKEND_DIR="$APP_DIR/backend"
             APP_NAME="Fast Store API"
-            DOMAIN="api.faststore.skirill.org"
+            DOMAIN="api.skirill.store"
             PORT="5500"
             REPO="git@github.com:DevBingaCodes/Fast-Store.git"
             ENV_FILE="/home/binga/app-configs/Fast-Store-API.env"
